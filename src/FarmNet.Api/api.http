@@ -1,0 +1,33 @@
+@host = http://localhost:5045
+
+### Auth
+
+### Đăng nhập (lấy JWT)
+# @name login
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@gmail.com",
+  "matKhau": "admin@123"
+}
+
+###
+@token = {{login.response.body.token}}
+
+###
+### Đẩy dữ liệu cảm biến từ thiết bị (API cho IoT)
+POST http://localhost:5045/api/sensors/data
+Content-Type: application/json
+
+{
+  "device": "ESP32_FARM_001",
+  "batchID": "XOAI111",
+  "time": "2026-03-25 14:30:05",
+  "temp": 30.5,
+  "hum": 65.2,
+  "rain": 1,
+  "water": 1800,
+  "gas": 120,
+  "pump": 0
+}

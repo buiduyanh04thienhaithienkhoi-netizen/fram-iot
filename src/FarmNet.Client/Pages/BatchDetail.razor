@@ -1,0 +1,469 @@
+@page "/batches/{Id:guid}"
+@attribute [Authorize]
+@inject ApiClient Api
+@inject NavigationManager Nav
+@inject IConfiguration Config
+@inject IJSRuntime JS
+
+<PageTitle>Chi tiết lô - FarmNet</PageTitle>
+
+@if (_loading)
+{
+    <div class="flex justify-center py-12">
+        <div class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+}
+else if (_batch == null)
+{
+    <Alert Color="Color.Warning" Visible>
+        <AlertMessage>Không tìm thấy lô sản phẩm</AlertMessage>
+    </Alert>
+}
+else
+{
+    <div class="space-y-6">
+        <div class="flex items-center gap-4 flex-wrap">
+            <Button Color="Color.Light" Size="Size.Small" Clicked='@(() => Nav.NavigateTo("/batches"))'>
+                <i class="fas fa-arrow-left"></i>
+            </Button>
+            <div>
+                <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@_batch.TenSanPham</Heading>
+                <Small TextColor="TextColor.Muted" class="font-mono">@_batch.MaLo · @_batch.TenFarm</Small>
+            </div>
+            <div class="ml-auto flex items-center gap-2 flex-wrap">
+                <BatchStatusBadge Status="@_batch.TrangThai" Label="@_batch.TenTrangThai" />
+                <AuthorizeView Roles="Admin,FarmOwner">
+                    <Authorized>
+                        @if (_batch.TrangThai == 1)
+                        {
+                            <Button Color="Color.Warning" Size="Size.Small" Clicked='@(() => Nav.NavigateTo($"/batches/{Id}/harvest"))'>
+                                <i class="fas fa-seedling mr-1"></i> Thu hoạch
+                            </Button>
+                        }
+                        @if (_harvest != null)
+                        {
+                            <Button Color="Color.Primary" Size="Size.Small" Clicked="ShowQr">
+                                <i class="fas fa-qrcode mr-1"></i> QR Code
+                            </Button>
+                        }
+                    </Authorized>
+                </AuthorizeView>
+                <Button Color="Color.Success" Size="Size.Small" Clicked='@(() => Nav.NavigateTo($"/batches/{Id}/logs"))'>
+                    <i class="fas fa-clipboard-list mr-1"></i> Nhật ký
+                </Button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle>
+                        <i class="fas fa-microchip text-blue-500 mr-2"></i>Dữ liệu cảm biến gần nhất
+                    </CardTitle>
+                </CardHeader>
+                <CardBody>
+                    @if (_sensorData.Any())
+                    {
+                        var latest = _sensorData.First();
+                        <div class="grid grid-cols-2 gap-4">
+                            <SensorMetric Label="Nhiệt độ" Value="@($"{latest.NhietDo:F1}°C")" Icon="fa-thermometer-half" Color="text-red-500" />
+                            <SensorMetric Label="Độ ẩm không khí" Value="@($"{latest.DoAm:F1}%")" Icon="fa-tint" Color="text-blue-500" />
+                                <SensorMetric Label="Mưa" Value="@(latest.CoMua ? "Mưa" : "Không mưa")" Icon="fa-cloud-showers-heavy" Color="text-indigo-500" />
+                                <SensorMetric Label="Khí (MQ7)" Value="@($"{latest.KhiGas:F0}")" Icon="fa-wind" Color="text-emerald-600" />
+                                <SensorMetric Label="Độ ẩm đất (analog)" Value="@($"{latest.DoAmDat:F0}")" Icon="fa-droplet" Color="text-teal-500" />
+                                <SensorMetric Label="Bơm" Value="@(latest.BomBat ? "Bật" : "Tắt")" Icon="fa-pump-med" Color="text-orange-500" />
+                            <div class="text-xs text-gray-400 flex items-end">
+                                <i class="fas fa-clock mr-1"></i>@latest.ThoiGian.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <Paragraph TextColor="TextColor.Muted" TextAlignment="TextAlignment.Center">Chưa có dữ liệu cảm biến</Paragraph>
+                    }
+                </CardBody>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>
+                        <i class="fas fa-leaf text-green-500 mr-2"></i>Thông tin thu hoạch
+                    </CardTitle>
+                </CardHeader>
+                <CardBody>
+                    @if (_harvest != null)
+                    {
+                        <div class="space-y-3">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-500">Ngày thu hoạch</span>
+                                <strong>@_harvest.NgayThuHoach.ToString("dd/MM/yyyy")</strong>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-500">Trọng lượng</span>
+                                <strong>@_harvest.TrongLuong kg</strong>
+                            </div>
+                            @if (!string.IsNullOrEmpty(_harvest.GhiChuChatLuong))
+                            {
+                                <div class="text-sm">
+                                    <span class="text-gray-500">Ghi chú: </span><span>@_harvest.GhiChuChatLuong</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <Paragraph TextColor="TextColor.Muted" TextAlignment="TextAlignment.Center">Chưa có thông tin thu hoạch</Paragraph>
+                    }
+                </CardBody>
+            </Card>
+        </div>
+
+        <Card>
+            <CardHeader>
+                <CardTitle>
+                    <i class="fas fa-clipboard-list text-green-500 mr-2"></i>Nhật ký canh tác (@_logs.Count bản ghi)
+                </CardTitle>
+            </CardHeader>
+            <CardBody>
+                @if (_logs.Any())
+                {
+                    <div class="space-y-3">
+                        @foreach (var log in _logs.Take(5))
+                        {
+                            <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                                <div class="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                    <i class="fas fa-leaf text-green-600 text-xs"></i>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <Paragraph class="font-medium text-gray-800 text-sm" Margin="Margin.Is0">@log.HoatDong</Paragraph>
+                                    @if (!string.IsNullOrEmpty(log.GhiChu))
+                                    {
+                                        <Small TextColor="TextColor.Muted">@log.GhiChu</Small>
+                                    }
+                                    <Small TextColor="TextColor.Muted">@log.NgayThucHien.ToLocalTime().ToString("dd/MM/yyyy") · @log.TenNguoiThucHien</Small>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    @if (_logs.Count > 5)
+                    {
+                        <Button Color="Color.Link" Size="Size.Small" Clicked='@(() => Nav.NavigateTo($"/batches/{Id}/logs"))' Margin="Margin.Is3.FromTop">
+                            Xem tất cả @_logs.Count bản ghi →
+                        </Button>
+                    }
+                }
+                else
+                {
+                    <Paragraph TextColor="TextColor.Muted" TextAlignment="TextAlignment.Center">Chưa có nhật ký canh tác</Paragraph>
+                }
+            </CardBody>
+        </Card>
+
+        <Card>
+            <CardHeader>
+                <CardTitle>
+                    <div class="flex items-center justify-between w-full">
+                        <span class="flex items-center gap-2">
+                            <i class="fas fa-shield-alt text-indigo-500"></i>Kiểm tra tính toàn vẹn dữ liệu
+                        </span>
+                        <div class="flex items-center gap-2">
+                            <AuthorizeView Roles="Admin,FarmOwner">
+                                <Authorized>
+                                    <Button Color="Color.Warning" Size="Size.Small" Clicked="RunCommit" Disabled="_committing">
+                                        @if (_committing)
+                                        {
+                                            <span class="flex items-center gap-2">
+                                                <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                Đang commit...
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span><i class="fas fa-link mr-1"></i> Commit Blockchain</span>
+                                        }
+                                    </Button>
+                                </Authorized>
+                            </AuthorizeView>
+                            <Button Color="Color.Primary" Size="Size.Small" Clicked="RunVerify" Disabled="_verifying">
+                                @if (_verifying)
+                                {
+                                    <span class="flex items-center gap-2">
+                                        <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                        Đang kiểm tra...
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span><i class="fas fa-sync-alt mr-1"></i> Kiểm tra ngay</span>
+                                }
+                            </Button>
+                        </div>
+                    </div>
+                </CardTitle>
+            </CardHeader>
+            <CardBody>
+                <Small TextColor="TextColor.Muted" class="block mb-4">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    Mỗi ngày dữ liệu được hash thành 1 bản ghi blockchain riêng. Hệ thống kiểm tra ngẫu nhiên một số ngày để xác minh.
+                </Small>
+
+                @if (_verify == null && !_verifying)
+                {
+                    <div class="text-center py-4">
+                        <i class="fas fa-shield-alt text-gray-200 text-4xl mb-3"></i>
+                        <Paragraph TextColor="TextColor.Muted">Nhấn "Kiểm tra ngay" để xác minh tính toàn vẹn dữ liệu</Paragraph>
+                    </div>
+                }
+                else if (_verify != null)
+                {
+                    @if (_verify.ToanVen)
+                    {
+                        <div class="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-xl mb-4">
+                            <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                <i class="fas fa-check-circle text-green-600 text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="font-semibold text-green-800">Dữ liệu toàn vẹn</p>
+                                <p class="text-green-600 text-sm">
+                                    Kiểm tra @_verify.SoNgayKiemTra/@_verify.TongSoNgay ngày — tất cả khớp với blockchain.
+                                </p>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-xl mb-4">
+                            <div class="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                <i class="fas fa-exclamation-triangle text-red-600 text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="font-semibold text-red-800">Phát hiện dữ liệu bị thay đổi</p>
+                                <p class="text-red-600 text-sm">
+                                    @_verify.SoNgayBiThayDoi/@_verify.SoNgayKiemTra ngày kiểm tra không khớp với dữ liệu gốc.
+                                </p>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="space-y-2 mb-4">
+                        <div class="p-3 border rounded-lg @StatusRowBg(_verify.TaoLoStatus)">
+                            <div class="flex items-center gap-3">
+                                <i class="fas @StatusIcon(_verify.TaoLoStatus) flex-shrink-0"></i>
+                                <span class="font-medium text-gray-800 text-sm flex-1">Tạo lô sản phẩm</span>
+                                <span class="text-xs font-semibold @StatusColor(_verify.TaoLoStatus)">@StatusLabel(_verify.TaoLoStatus)</span>
+                            </div>
+                        </div>
+                        @if (_verify.ThuHoachStatus.HasValue)
+                        {
+                            <div class="p-3 border rounded-lg @StatusRowBg(_verify.ThuHoachStatus.Value)">
+                                <div class="flex items-center gap-3">
+                                    <i class="fas @StatusIcon(_verify.ThuHoachStatus.Value) flex-shrink-0"></i>
+                                    <span class="font-medium text-gray-800 text-sm flex-1">Thu hoạch</span>
+                                    <span class="text-xs font-semibold @StatusColor(_verify.ThuHoachStatus.Value)">@StatusLabel(_verify.ThuHoachStatus.Value)</span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    @if (_verify.ChiTietNgay.Count > 0)
+                    {
+                        <h4 class="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                            <i class="fas fa-calendar-check text-indigo-400"></i>
+                            Kiểm tra ngẫu nhiên theo ngày (@_verify.SoNgayKiemTra/@_verify.TongSoNgay)
+                        </h4>
+                        <div class="space-y-2">
+                            @foreach (var item in _verify.ChiTietNgay)
+                            {
+                                <div class="p-3 border rounded-lg @StatusRowBg(item.TrangThai)">
+                                    <div class="flex items-center gap-3">
+                                        <i class="fas @StatusIcon(item.TrangThai) flex-shrink-0"></i>
+                                        <div class="flex-1 min-w-0">
+                                            <div class="flex items-center justify-between gap-2">
+                                                <span class="font-medium text-gray-800 text-sm">@item.Ngay</span>
+                                                <div class="flex items-center gap-3 text-xs text-gray-400">
+                                                    <span>@item.SoNhatKy nhật ký</span>
+                                                    <span>@item.SoCamBien cảm biến</span>
+                                                </div>
+                                            </div>
+                                            @if (!item.IsMatch)
+                                            {
+                                                <div class="mt-1.5 space-y-0.5">
+                                                    <div class="flex items-center gap-2 text-xs">
+                                                        <span class="text-gray-400 w-16 flex-shrink-0">Hash lưu</span>
+                                                        <span class="text-gray-600 font-mono truncate">@item.StoredHash</span>
+                                                    </div>
+                                                    <div class="flex items-center gap-2 text-xs">
+                                                        <span class="text-gray-400 w-16 flex-shrink-0">Hash tính</span>
+                                                        <span class="text-red-600 font-mono truncate">@item.ComputedHash</span>
+                                                    </div>
+                                                </div>
+                                            }
+                                            @if (!string.IsNullOrEmpty(item.TxHash))
+                                            {
+                                                <div class="flex items-center gap-2 text-xs mt-1">
+                                                    <span class="text-gray-400 w-16 flex-shrink-0">TxHash</span>
+                                                    <span class="text-indigo-600 font-mono truncate">@item.TxHash</span>
+                                                    <button class="text-gray-400 hover:text-indigo-600 flex-shrink-0"
+                                                            @onclick='() => CopyToClipboard(item.TxHash!)' title="Sao chép">
+                                                        <i class="fas @(_copiedHash == item.TxHash ? "fa-check text-green-500" : "fa-copy") text-xs"></i>
+                                                    </button>
+                                                </div>
+                                            }
+                                        </div>
+                                        <span class="text-xs font-semibold flex-shrink-0 @StatusColor(item.TrangThai)">
+                                            @StatusLabel(item.TrangThai)
+                                        </span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            </CardBody>
+        </Card>
+    </div>
+}
+
+<Modal @bind-Visible="@_showQr" Centered>
+    <ModalContent>
+        <ModalHeader>
+            <ModalTitle>
+                <i class="fas fa-qrcode text-green-600 mr-2"></i>QR Code truy xuất nguồn gốc
+            </ModalTitle>
+            <CloseButton />
+        </ModalHeader>
+        <ModalBody>
+            @if (_batch != null)
+            {
+                var traceUrl = $"{(Config["TraceBaseUrl"] ?? Nav.BaseUri.TrimEnd('/'))}/trace/{_batch.MaLo}";
+                <div class="flex flex-col items-center gap-4 py-2">
+                    <div id="qr-code-container" class="p-4 bg-white rounded-2xl shadow-inner border border-gray-100 inline-block">
+                        <QRCode Value="@traceUrl" Alt="QR Code truy xuất nguồn gốc" EccLevel="EccLevel.Q" PixelsPerModule="7" />
+                    </div>
+                    <div class="text-center">
+                        <p class="font-semibold text-gray-800">@_batch.TenSanPham</p>
+                        <p class="text-xs text-gray-400 font-mono">@_batch.MaLo · @_batch.TenFarm</p>
+                    </div>
+                    <div class="w-full bg-gray-50 rounded-lg px-3 py-2 flex items-center gap-2">
+                        <i class="fas fa-link text-gray-400 text-xs flex-shrink-0"></i>
+                        <span class="text-xs text-gray-500 font-mono truncate flex-1">@traceUrl</span>
+                        <Button Size="Size.ExtraSmall" Color="@(_copiedHash == traceUrl ? Color.Success : Color.Light)"
+                                Clicked='() => CopyToClipboard(traceUrl)' title="Sao chép link">
+                            <i class="fas @(_copiedHash == traceUrl ? "fa-check" : "fa-copy") text-xs"></i>
+                        </Button>
+                    </div>
+                </div>
+            }
+        </ModalBody>
+        <ModalFooter>
+            <Button Color="Color.Light" Clicked="() => _showQr = false">Đóng</Button>
+        </ModalFooter>
+    </ModalContent>
+</Modal>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private BatchDto? _batch;
+    private List<SensorDataDto> _sensorData = [];
+    private HarvestDto? _harvest;
+    private List<FarmingLogDto> _logs = [];
+    private BlockchainVerifyResultDto? _verify;
+    private bool _loading = true, _showQr, _verifying, _committing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _batch = await Api.GetAsync<BatchDto>($"api/batches/{Id}");
+            if (_batch != null)
+            {
+                var sensorTask = Api.GetAsync<List<SensorDataDto>>($"api/sensors/data/{_batch.MaLo}");
+                var harvestTask = Api.GetAsync<HarvestDto>($"api/harvests/{Id}");
+                var logsTask = Api.GetAsync<List<FarmingLogDto>>($"api/farming-logs/{Id}");
+                await Task.WhenAll(sensorTask, harvestTask, logsTask);
+                _sensorData = await sensorTask ?? [];
+                _harvest = await harvestTask;
+                _logs = await logsTask ?? [];
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task RunVerify()
+    {
+        _verifying = true;
+        StateHasChanged();
+        try
+        {
+            _verify = await Api.GetAsync<BlockchainVerifyResultDto>($"api/batches/{Id}/verify");
+        }
+        finally
+        {
+            _verifying = false;
+        }
+    }
+
+    private async Task RunCommit()
+    {
+        _committing = true;
+        StateHasChanged();
+        try
+        {
+            await Api.PostAsync<object>($"api/batches/{Id}/commit-blockchain", new { });
+        }
+        finally
+        {
+            _committing = false;
+        }
+    }
+
+    private void ShowQr() => _showQr = true;
+
+    private static string StatusLabel(VerifyStatus s) => s switch
+    {
+        VerifyStatus.HopLe => "Hợp lệ",
+        VerifyStatus.ChuaXacNhan => "Chờ xác nhận",
+        VerifyStatus.BiThayDoi => "Dữ liệu bị thay đổi",
+        VerifyStatus.BlockchainKhongKhop => "Blockchain không khớp",
+        VerifyStatus.KhongTruyCapBlockchain => "Không kết nối được blockchain",
+        _ => "Không xác định"
+    };
+
+    private static string StatusColor(VerifyStatus s) => s switch
+    {
+        VerifyStatus.HopLe => "text-green-600",
+        VerifyStatus.ChuaXacNhan => "text-yellow-600",
+        VerifyStatus.KhongTruyCapBlockchain => "text-orange-500",
+        _ => "text-red-600"
+    };
+
+    private static string StatusRowBg(VerifyStatus s) => s switch
+    {
+        VerifyStatus.HopLe => "border-green-100 bg-white",
+        VerifyStatus.ChuaXacNhan => "border-yellow-100 bg-yellow-50",
+        _ => "border-red-200 bg-red-50"
+    };
+
+    private static string StatusIcon(VerifyStatus s) => s switch
+    {
+        VerifyStatus.HopLe => "fa-check-circle text-green-500",
+        VerifyStatus.ChuaXacNhan => "fa-clock text-yellow-500",
+        VerifyStatus.KhongTruyCapBlockchain => "fa-plug-circle-exclamation text-orange-400",
+        VerifyStatus.BlockchainKhongKhop => "fa-link-slash text-red-500",
+        _ => "fa-times-circle text-red-500"
+    };
+
+    private string? _copiedHash;
+    private async Task CopyToClipboard(string text)
+    {
+        await JS.InvokeVoidAsync("copyToClipboard", text);
+        _copiedHash = text;
+        StateHasChanged();
+        await Task.Delay(2000);
+        _copiedHash = null;
+        StateHasChanged();
+    }
+}
