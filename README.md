@@ -15,7 +15,7 @@
 ### 1. Clone & restore
 
 ```bash
-git clone [<repo-url>](https://github.com/buiduyanh04thienhaithienkhoi-netizen/fram-iot)
+git clone https://github.com/buiduyanh04thienhaithienkhoi-netizen/fram-iot/edit/main/README.md
 cd farm-net
 dotnet restore
 dotnet tool restore
